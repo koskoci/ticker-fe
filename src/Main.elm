@@ -26,7 +26,7 @@ type alias Model =
 type BackendState
     = Failure
     | Loading
-    | Success String
+    | Success (List Int)
 
 
 init : () -> ( Model, Cmd Msg )
@@ -39,17 +39,17 @@ init _ =
 
 
 type Msg
-    = GotString (Result Http.Error String)
+    = GotList (Result Http.Error (List Int))
     | SetInvestment String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotString result ->
+        GotList result ->
             case result of
-                Ok myString ->
-                    ( { model | backendState = Success myString }, Cmd.none )
+                Ok myList ->
+                    ( { model | backendState = Success myList }, Cmd.none )
 
                 Err _ ->
                     ( { model | backendState = Failure }, Cmd.none )
@@ -105,9 +105,9 @@ viewData model =
         Loading ->
             text "Loading..."
 
-        Success myString ->
+        Success myList ->
             div []
-                [ text myString
+                [ renderList myList
                 ]
 
 
@@ -126,7 +126,7 @@ pingBackend =
         , tracker = Nothing
         , headers = []
         , url = "http://localhost:4000/api"
-        , expect = Http.expectString GotString
+        , expect = Http.expectJson GotList myDecoder
         }
 
 
