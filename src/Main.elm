@@ -1,6 +1,8 @@
 module Main exposing (main)
 
 import Browser
+import Date exposing (Date)
+import DatePicker exposing (DatePicker)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -20,6 +22,8 @@ main =
 type alias Model =
     { backendState : BackendState
     , startAmount : Int
+    , startDate : Maybe Date
+    , datePicker : DatePicker
     }
 
 
@@ -32,14 +36,20 @@ type BackendState
 init : () -> ( Model, Cmd Msg )
 init _ =
     let
+        ( datePicker, datePickerCmd ) =
+            DatePicker.init
+
         initialModel =
             { backendState = Loading
             , startAmount = 0
+            , startDate = Nothing
+            , datePicker = datePicker
             }
 
         commands =
             Cmd.batch
                 [ pingBackend
+                , Cmd.map SetDatePicker datePickerCmd
                 ]
     in
     ( initialModel, commands )
@@ -48,6 +58,7 @@ init _ =
 type Msg
     = GotList (Result Http.Error (List Int))
     | SetStartAmount String
+    | SetDatePicker DatePicker.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -73,6 +84,31 @@ update msg model =
                 Nothing ->
                     ( { model | startAmount = 0 }, Cmd.none )
 
+        SetDatePicker subMsg ->
+            let
+                ( newDatePicker, dateEvent ) =
+                    DatePicker.update someSettings subMsg model.datePicker
+
+                startDate =
+                    case dateEvent of
+                        DatePicker.Picked newDate ->
+                            Just newDate
+
+                        _ ->
+                            model.startDate
+            in
+            ( { model
+                | startDate = startDate
+                , datePicker = newDatePicker
+              }
+            , Cmd.none
+            )
+
+
+someSettings : DatePicker.Settings
+someSettings =
+    DatePicker.defaultSettings
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -84,7 +120,17 @@ view model =
     div []
         [ h2 [] [ text "Ticker!" ]
         , viewStartDate model
+        , viewStartAmount model
         , viewData model
+        ]
+
+
+viewStartDate : Model -> Html Msg
+viewStartDate model =
+    div []
+        [ label [] [ text "Start Date:" ]
+        , DatePicker.view model.startDate someSettings model.datePicker
+            |> Html.map SetDatePicker
         ]
 
 
