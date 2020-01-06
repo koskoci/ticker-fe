@@ -19,7 +19,7 @@ main =
 
 type alias Model =
     { backendState : BackendState
-    , investment : Int
+    , startAmount : Int
     }
 
 
@@ -33,14 +33,21 @@ init : () -> ( Model, Cmd Msg )
 init _ =
     let
         initialModel =
-            { backendState = Loading, investment = 0 }
+            { backendState = Loading
+            , startAmount = 0
+            }
+
+        commands =
+            Cmd.batch
+                [ pingBackend
+                ]
     in
-    ( initialModel, pingBackend )
+    ( initialModel, commands )
 
 
 type Msg
     = GotList (Result Http.Error (List Int))
-    | SetInvestment String
+    | SetStartAmount String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -54,17 +61,17 @@ update msg model =
                 Err _ ->
                     ( { model | backendState = Failure }, Cmd.none )
 
-        SetInvestment investmentString ->
+        SetStartAmount amountString ->
             let
-                investment =
-                    String.toInt investmentString
+                amount =
+                    String.toInt amountString
             in
-            case investment of
-                Just integer ->
-                    ( { model | investment = integer }, Cmd.none )
+            case amount of
+                Just amountInt ->
+                    ( { model | startAmount = amountInt }, Cmd.none )
 
                 Nothing ->
-                    ( { model | investment = 0 }, Cmd.none )
+                    ( { model | startAmount = 0 }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -76,19 +83,19 @@ view : Model -> Html Msg
 view model =
     div []
         [ h2 [] [ text "Ticker!" ]
-        , viewInvestment model
+        , viewStartDate model
         , viewData model
         ]
 
 
-viewInvestment : Model -> Html Msg
-viewInvestment model =
+viewStartAmount : Model -> Html Msg
+viewStartAmount model =
     div []
-        [ label [] [ text "Starting investment: $" ]
+        [ label [] [ text "Initial Balance: $" ]
         , input
             [ type_ "text"
-            , value (String.fromInt model.investment)
-            , onInput SetInvestment
+            , value (String.fromInt model.startAmount)
+            , onInput SetStartAmount
             ]
             []
         ]
@@ -99,7 +106,7 @@ viewData model =
     case model.backendState of
         Failure ->
             div []
-                [ text "I could not load a random cat for some reason. "
+                [ text "I could not load the data . "
                 ]
 
         Loading ->
