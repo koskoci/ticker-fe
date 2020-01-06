@@ -17,7 +17,13 @@ main =
         }
 
 
-type Model
+type alias Model =
+    { backendState : BackendState
+    , investment : Int
+    }
+
+
+type BackendState
     = Failure
     | Loading
     | Success String
@@ -25,27 +31,40 @@ type Model
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( Loading, pingBackend )
+    let
+        initialModel =
+            { backendState = Loading, investment = 0 }
+    in
+    ( initialModel, pingBackend )
 
 
 type Msg
-    = MorePlease
-    | GotString (Result Http.Error String)
+    = GotString (Result Http.Error String)
+    | SetInvestment String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        MorePlease ->
-            ( Loading, pingBackend )
-
         GotString result ->
             case result of
                 Ok myString ->
-                    ( Success myString, Cmd.none )
+                    ( { model | backendState = Success myString }, Cmd.none )
 
                 Err _ ->
-                    ( Failure, Cmd.none )
+                    ( { model | backendState = Failure }, Cmd.none )
+
+        SetInvestment investmentString ->
+            let
+                investment =
+                    String.toInt investmentString
+            in
+            case investment of
+                Just integer ->
+                    ( { model | investment = integer }, Cmd.none )
+
+                Nothing ->
+                    ( { model | investment = 0 }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -56,18 +75,31 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
     div []
-        [ h2 [] [ text "Random Cats" ]
-        , viewGif model
+        [ h2 [] [ text "Ticker!" ]
+        , viewInvestment model
+        , viewData model
         ]
 
 
-viewGif : Model -> Html Msg
-viewGif model =
-    case model of
+viewInvestment : Model -> Html Msg
+viewInvestment model =
+    div []
+        [ label [] [ text "Starting investment: $" ]
+        , input
+            [ type_ "text"
+            , value (String.fromInt model.investment)
+            , onInput SetInvestment
+            ]
+            []
+        ]
+
+
+viewData : Model -> Html Msg
+viewData model =
+    case model.backendState of
         Failure ->
             div []
                 [ text "I could not load a random cat for some reason. "
-                , button [ onClick MorePlease ] [ text "Try Again!" ]
                 ]
 
         Loading ->
