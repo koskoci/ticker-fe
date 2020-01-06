@@ -1,0 +1,26 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Ticker!</title>
+
+  <link rel="stylesheet"
+      type="text/css"
+      href="https://necolas.github.io/normalize.css/latest/normalize.css" />
+
+  <script type="text/javascript" src="/elm.js"></script>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" type="image/png" href="/ticker.png">
+</head>
+
+<body>
+  <div id="elm-landing-pad"></div>
+</body>
+
+<script type="text/javascript">
+  const elmDiv = document.getElementById("elm-landing-pad")
+  var app = Elm.Main.init({ node: elmDiv });
+</script>
+
+</html>
