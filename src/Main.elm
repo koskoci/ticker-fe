@@ -2,7 +2,7 @@ module Main exposing (main)
 
 import Browser
 import Date exposing (Date)
-import DatePicker exposing (DatePicker)
+import DatePicker exposing (DatePicker, defaultSettings)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -107,7 +107,11 @@ update msg model =
 
 someSettings : DatePicker.Settings
 someSettings =
-    DatePicker.defaultSettings
+    { defaultSettings
+        | inputClassList = [ ( "input", True ) ]
+        , inputName = Just "date"
+        , inputId = Just "date-field"
+    }
 
 
 subscriptions : Model -> Sub Msg
@@ -117,33 +121,50 @@ subscriptions model =
 
 view : Model -> Html Msg
 view model =
-    div []
-        [ h2 [] [ text "Ticker!" ]
-        , viewStartDate model
-        , viewStartAmount model
-        , viewData model
+    div [ class "container" ]
+        [ div [ class "columns" ]
+            [ div [ class "column" ] []
+            , div [ class "column" ]
+                [ h1 [ class "is-size-1 has-text-centered" ] [ text "ticker!" ]
+                , div
+                    [ class "box has-background-primary" ]
+                    [ viewStartDate model
+                    , viewStartAmount model
+                    ]
+                ]
+            , div [ class "column" ] []
+            ]
         ]
 
 
 viewStartDate : Model -> Html Msg
 viewStartDate model =
-    div []
-        [ label [] [ text "Start Date:" ]
-        , DatePicker.view model.startDate someSettings model.datePicker
-            |> Html.map SetDatePicker
+    div [ class "columns" ]
+        [ label [ class "column" ] [ text "Start Date:" ]
+        , div [ class "column" ]
+            [ DatePicker.view model.startDate someSettings model.datePicker
+                |> Html.map SetDatePicker
+            ]
         ]
 
 
 viewStartAmount : Model -> Html Msg
 viewStartAmount model =
-    div []
-        [ label [] [ text "Initial Balance: $" ]
-        , input
-            [ type_ "text"
-            , value (String.fromInt model.startAmount)
-            , onInput SetStartAmount
+    div [ class "columns" ]
+        [ label [ class "column" ] [ text "Initial Balance:" ]
+        , div [ class "column field has-addons" ]
+            [ div [ class "control" ]
+                [ a [ class "button is-static" ] [ text "$" ] ]
+            , div [ class "control" ]
+                [ input
+                    [ type_ "text"
+                    , value (String.fromInt model.startAmount)
+                    , onInput SetStartAmount
+                    , class "input"
+                    ]
+                    []
+                ]
             ]
-            []
         ]
 
 
