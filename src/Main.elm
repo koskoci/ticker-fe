@@ -22,7 +22,7 @@ main =
 type alias Model =
     { backendState : BackendState
     , startAmount : Int
-    , startDate : Maybe Date
+    , date : Maybe Date
     , datePicker : DatePicker
     }
 
@@ -31,6 +31,12 @@ type BackendState
     = Failure
     | Loading
     | Success (List Int)
+
+
+type Msg
+    = GotList (Result Http.Error (List Int))
+    | SetStartAmount String
+    | SetDatePicker DatePicker.Msg
 
 
 init : () -> ( Model, Cmd Msg )
@@ -42,7 +48,7 @@ init _ =
         initialModel =
             { backendState = Loading
             , startAmount = 0
-            , startDate = Nothing
+            , date = Nothing
             , datePicker = datePicker
             }
 
@@ -53,12 +59,6 @@ init _ =
                 ]
     in
     ( initialModel, commands )
-
-
-type Msg
-    = GotList (Result Http.Error (List Int))
-    | SetStartAmount String
-    | SetDatePicker DatePicker.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -89,16 +89,16 @@ update msg model =
                 ( newDatePicker, dateEvent ) =
                     DatePicker.update someSettings subMsg model.datePicker
 
-                startDate =
+                date =
                     case dateEvent of
                         DatePicker.Picked newDate ->
                             Just newDate
 
                         _ ->
-                            model.startDate
+                            model.date
             in
             ( { model
-                | startDate = startDate
+                | date = date
                 , datePicker = newDatePicker
               }
             , Cmd.none
@@ -140,9 +140,9 @@ view model =
 viewStartDate : Model -> Html Msg
 viewStartDate model =
     div [ class "columns" ]
-        [ label [ class "column" ] [ text "Start Date:" ]
+        [ label [ class "column has-text-weight-semibold" ] [ text "Start Date:" ]
         , div [ class "column" ]
-            [ DatePicker.view model.startDate someSettings model.datePicker
+            [ DatePicker.view model.date someSettings model.datePicker
                 |> Html.map SetDatePicker
             ]
         ]
@@ -151,7 +151,7 @@ viewStartDate model =
 viewStartAmount : Model -> Html Msg
 viewStartAmount model =
     div [ class "columns" ]
-        [ label [ class "column" ] [ text "Initial Balance:" ]
+        [ label [ class "column has-text-weight-semibold" ] [ text "Initial Balance:" ]
         , div [ class "column field has-addons" ]
             [ div [ class "control" ]
                 [ a [ class "button is-static" ] [ text "$" ] ]
