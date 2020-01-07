@@ -87,7 +87,7 @@ update msg model =
         SetDatePicker subMsg ->
             let
                 ( newDatePicker, dateEvent ) =
-                    DatePicker.update someSettings subMsg model.datePicker
+                    DatePicker.update (settings model.datePicker) subMsg model.datePicker
 
                 date =
                     case dateEvent of
@@ -105,12 +105,21 @@ update msg model =
             )
 
 
-someSettings : DatePicker.Settings
-someSettings =
+settings : DatePicker.DatePicker -> DatePicker.Settings
+settings datePicker =
+    let
+        isDisabledAfter : Date -> Date -> Bool
+        isDisabledAfter laterDate date =
+            Date.compare laterDate date == LT
+
+        today =
+            DatePicker.getInitialDate datePicker
+    in
     { defaultSettings
         | inputClassList = [ ( "input", True ) ]
         , inputName = Just "date"
         , inputId = Just "date-field"
+        , isDisabled = isDisabledAfter today
     }
 
 
@@ -142,7 +151,7 @@ viewStartDate model =
     div [ class "columns" ]
         [ label [ class "column has-text-weight-semibold" ] [ text "Start Date:" ]
         , div [ class "column" ]
-            [ DatePicker.view model.date someSettings model.datePicker
+            [ DatePicker.view model.date (settings model.datePicker) model.datePicker
                 |> Html.map SetDatePicker
             ]
         ]
