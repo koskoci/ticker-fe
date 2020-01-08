@@ -8,6 +8,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
 import Json.Decode exposing (Decoder, field, int, list, string)
+import Time
 
 
 main =
@@ -117,9 +118,8 @@ settings datePicker =
     in
     { defaultSettings
         | inputClassList = [ ( "input", True ) ]
-        , inputName = Just "date"
-        , inputId = Just "date-field"
         , isDisabled = isDisabledAfter today
+        , firstDayOfWeek = Time.Mon
     }
 
 
