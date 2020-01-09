@@ -8,6 +8,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
 import Json.Decode exposing (Decoder, decodeString, field, int, list, string)
+import Json.Encode exposing (encode, int, object, string)
 import Time
 
 
@@ -120,7 +121,7 @@ update msg model =
                     ( { model | currentTicker = Nothing }, Cmd.none )
 
                 False ->
-                    ( { model | currentTicker = Just ticker }, Cmd.none )
+                    ( { model | currentTicker = Just (String.toUpper ticker) }, Cmd.none )
 
         AddAllocation ->
             let
@@ -186,7 +187,7 @@ view model =
     in
     div [ class "container" ]
         [ div [ class "columns" ]
-            [ div [ class "column" ] [ text ("total: " ++ String.fromFloat (totalPercentage model) ++ "\tOK: " ++ goodToGo) ]
+            [ div [ class "column" ] [ text ("total: " ++ String.fromFloat (totalPercentage model) ++ "\tOK: " ++ goodToGo ++ "\nMessageBody: " ++ messageBody model) ]
             , div [ class "column is-half" ]
                 [ h1 [ class "is-size-1 has-text-centered" ] [ text "ticker!" ]
                 , div
@@ -280,7 +281,6 @@ viewAllocationAdder model =
                     [ type_ "text"
                     , value currentPercentage
                     , onBlurWithTargetValue SetCurrentPercentage
-                    , onEnter AddAllocation
                     , class "input"
                     , placeholder "percent"
                     ]
@@ -331,7 +331,7 @@ pingBackend =
 
 myDecoder : Decoder (List Int)
 myDecoder =
-    field "data" (field "draw" (Json.Decode.list int))
+    field "data" (field "draw" (Json.Decode.list Json.Decode.int))
 
 
 onBlurWithTargetValue : (String -> msg) -> Attribute msg
@@ -343,7 +343,11 @@ currentAllocation : Model -> Maybe Allocation
 currentAllocation model =
     case ( model.currentPercentage, model.currentTicker ) of
         ( Just percentage, Just ticker ) ->
-            Just (Allocation percentage ticker)
+            if percentage == 0 then
+                Nothing
+
+            else
+                Just (Allocation percentage ticker)
 
         _ ->
             Nothing
@@ -408,3 +412,27 @@ invalidAllocation model =
 
         _ ->
             True
+
+
+messageBody : Model -> String
+messageBody model =
+    case ( model.startDate, model.initialBalance ) of
+        ( Just startDate, Just initialBalance ) ->
+            Json.Encode.object
+                [ ( "startDate", Json.Encode.string (Date.toIsoString startDate) )
+                , ( "initialBalance", Json.Encode.int initialBalance )
+                , ( "portfolio", Json.Encode.list allocationEncoder model.portfolio )
+                ]
+                |> Json.Encode.encode 4
+
+        _ ->
+            Json.Encode.string "Form not submittable"
+                |> Json.Encode.encode 4
+
+
+allocationEncoder : Allocation -> Json.Encode.Value
+allocationEncoder allocation =
+    Json.Encode.object
+        [ ( "percentage", Json.Encode.float allocation.percentage )
+        , ( "ticker", Json.Encode.string allocation.ticker )
+        ]
