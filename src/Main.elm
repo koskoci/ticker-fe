@@ -440,21 +440,38 @@ messageBody model =
     case ( model.startDate, model.initialBalance ) of
         ( Just startDate, Just initialBalance ) ->
             Json.Encode.object
-                [ ( "startDate", Json.Encode.string (Date.toIsoString startDate) )
-                , ( "initialBalance", Json.Encode.int initialBalance )
-                , ( "portfolio", Json.Encode.list allocationEncoder model.portfolio )
+                [ ( "historyRequest", Json.Encode.list (allocationEncoder << extendAllocation startDate initialBalance) model.portfolio )
                 ]
 
         _ ->
             Json.Encode.string "Form not submittable"
 
 
-allocationEncoder : Allocation -> Json.Encode.Value
+allocationEncoder : ExtendedAllocation -> Json.Encode.Value
 allocationEncoder allocation =
     Json.Encode.object
         [ ( "percentage", Json.Encode.float allocation.percentage )
         , ( "ticker", Json.Encode.string allocation.ticker )
+        , ( "startDate", Json.Encode.string (Date.toIsoString allocation.startDate) )
+        , ( "initialBalance", Json.Encode.int allocation.initialBalance )
         ]
+
+
+type alias ExtendedAllocation =
+    { percentage : Float
+    , ticker : String
+    , startDate : Date
+    , initialBalance : Int
+    }
+
+
+extendAllocation : Date -> Int -> Allocation -> ExtendedAllocation
+extendAllocation startDate initialBalance allocation =
+    { percentage = allocation.percentage
+    , ticker = allocation.ticker
+    , startDate = startDate
+    , initialBalance = initialBalance
+    }
 
 
 postToBackend : Model -> Cmd Msg
