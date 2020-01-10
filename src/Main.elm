@@ -51,6 +51,7 @@ type Msg
     | SetCurrentPercentage String
     | SetCurrentTicker String
     | AddAllocation
+    | Submit
 
 
 init : () -> ( Model, Cmd Msg )
@@ -151,6 +152,9 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none )
 
+        Submit ->
+            ( model, postToBackend model )
+
 
 datePickerSettings : DatePicker.DatePicker -> DatePicker.Settings
 datePickerSettings datePicker =
@@ -166,6 +170,7 @@ datePickerSettings datePicker =
         | inputClassList = [ ( "input", True ) ]
         , isDisabled = isDisabledAfter today
         , firstDayOfWeek = Time.Mon
+        , placeholder = "Click here to pick a date"
     }
 
 
@@ -186,16 +191,16 @@ view model =
                     "No"
     in
     div [ class "container" ]
-        [ div [ class "columns" ]
-            [ div [ class "column" ] [ text ("total: " ++ String.fromFloat (totalPercentage model) ++ "\tOK: " ++ goodToGo ++ "\nMessageBody: " ++ messageBody model) ]
-            , div [ class "column is-half" ]
-                [ h1 [ class "is-size-1 has-text-centered" ] [ text "ticker!" ]
-                , div
-                    [ class "box has-background-primary" ]
+        [ div [ class "column" ] [ text ("total: " ++ String.fromFloat (totalPercentage model) ++ "\tOK: " ++ goodToGo ++ "\nMessageBody: " ++ Json.Encode.encode 4 (messageBody model)) ]
+        , div [ class "columns" ]
+            [ div [ class "column is-one-third" ]
+                [ h1 [ class "title has-text-primary is-size-1" ] [ text "ticker!" ]
+                , Html.form [ class "form" ]
                     [ viewStartDate model
                     , viewStartAmount model
                     , viewAllocationAdder model
                     , viewAllocationLister model
+                    , viewSubmitter model
                     ]
                 ]
             , div [ class "column" ] []
@@ -205,9 +210,9 @@ view model =
 
 viewStartDate : Model -> Html Msg
 viewStartDate model =
-    div [ class "columns" ]
-        [ label [ class "column label" ] [ text "Start Date:" ]
-        , div [ class "column" ]
+    div [ class "field" ]
+        [ label [ class "label" ] [ text "Start Date" ]
+        , div [ class "control" ]
             [ DatePicker.view model.startDate (datePickerSettings model.datePicker) model.datePicker
                 |> Html.map SetDatePicker
             ]
@@ -225,20 +230,19 @@ viewStartAmount model =
                 Nothing ->
                     ""
     in
-    div [ class "columns" ]
-        [ label [ class "column label" ] [ text "Initial Balance:" ]
-        , div [ class "column field has-addons" ]
-            [ div [ class "control" ]
-                [ a [ class "button is-static" ] [ text "$" ] ]
-            , div [ class "control fullwidth" ]
-                [ input
-                    [ type_ "text"
-                    , value initialBalance
-                    , onBlurWithTargetValue SetStartAmount
-                    , class "input"
-                    , placeholder "Initial Balance"
-                    ]
-                    []
+    div [ class "field" ]
+        [ label [ class "label" ] [ text "Initial Balance" ]
+        , div [ class "control has-icons-left" ]
+            [ input
+                [ type_ "text"
+                , value initialBalance
+                , onBlurWithTargetValue SetStartAmount
+                , class "input"
+                , placeholder "Initial Balance"
+                ]
+                []
+            , span [ class "icon is-left" ]
+                [ i [ class "fas fa-dollar-sign" ] []
                 ]
             ]
         ]
@@ -263,32 +267,34 @@ viewAllocationAdder model =
                 Nothing ->
                     ""
     in
-    div [ class "columns" ]
-        [ div [ class "column" ]
-            [ label [ class "label" ] [ text "Portfolio:" ] ]
-        , div [ class "column field has-addons" ]
+    div [ class "field" ]
+        [ label [ class "label" ] [ text "Portfolio:" ]
+        , div [ class "field is-grouped" ]
             [ div [ class "control" ]
                 [ button
-                    [ class "button"
+                    [ type_ "button"
+                    , class "button is-primary"
                     , disabled (invalidAllocation model)
                     , onClick AddAllocation
                     ]
-                    [ text "+"
+                    [ span [ class "icon" ]
+                        [ i [ class "fas fa-plus" ] [] ]
                     ]
                 ]
-            , div [ class "control fullwidth" ]
+            , div [ class "control has-icons-right" ]
                 [ input
                     [ type_ "text"
                     , value currentPercentage
                     , onBlurWithTargetValue SetCurrentPercentage
                     , class "input"
-                    , placeholder "percent"
+                    , id "percentage-input"
                     ]
                     []
+                , span [ class "icon is-right" ]
+                    [ i [ class "fas fa-percent" ] []
+                    ]
                 ]
             , div [ class "control" ]
-                [ a [ class "button is-static" ] [ text "%" ] ]
-            , div [ class "control fullwidth" ]
                 [ input
                     [ type_ "text"
                     , value currentTicker
@@ -296,8 +302,9 @@ viewAllocationAdder model =
                     , onEnter AddAllocation
                     , class "input"
                     , placeholder "ticker"
+                    , id "ticker-input"
                     ]
-                    [ text "foo" ]
+                    []
                 ]
             ]
         ]
@@ -305,15 +312,29 @@ viewAllocationAdder model =
 
 viewAllocationLister : Model -> Html Msg
 viewAllocationLister model =
-    ul []
-        (List.map
-            (\allocation ->
-                li []
-                    [ text (String.fromFloat allocation.percentage ++ ":\t" ++ allocation.ticker)
-                    ]
+    div [ class "content" ]
+        [ ul []
+            (model.portfolio
+                |> List.sortBy ((*) -1 << .percentage)
+                |> List.map
+                    (\allocation ->
+                        li []
+                            [ text (String.fromFloat allocation.percentage ++ "%: " ++ allocation.ticker)
+                            ]
+                    )
             )
-            model.portfolio
-        )
+        ]
+
+
+viewSubmitter : Model -> Html Msg
+viewSubmitter model =
+    button
+        [ class "button is-primary stretch"
+        , type_ "button"
+        , disabled (not (formSubmittable model))
+        , onClick Submit
+        ]
+        [ text "Get Chart" ]
 
 
 pingBackend : Cmd Msg
@@ -414,7 +435,7 @@ invalidAllocation model =
             True
 
 
-messageBody : Model -> String
+messageBody : Model -> Json.Encode.Value
 messageBody model =
     case ( model.startDate, model.initialBalance ) of
         ( Just startDate, Just initialBalance ) ->
@@ -423,11 +444,9 @@ messageBody model =
                 , ( "initialBalance", Json.Encode.int initialBalance )
                 , ( "portfolio", Json.Encode.list allocationEncoder model.portfolio )
                 ]
-                |> Json.Encode.encode 4
 
         _ ->
             Json.Encode.string "Form not submittable"
-                |> Json.Encode.encode 4
 
 
 allocationEncoder : Allocation -> Json.Encode.Value
@@ -436,3 +455,16 @@ allocationEncoder allocation =
         [ ( "percentage", Json.Encode.float allocation.percentage )
         , ( "ticker", Json.Encode.string allocation.ticker )
         ]
+
+
+postToBackend : Model -> Cmd Msg
+postToBackend model =
+    Http.request
+        { method = "POST"
+        , body = Http.jsonBody (messageBody model)
+        , timeout = Nothing
+        , tracker = Nothing
+        , headers = []
+        , url = "http://localhost:4000/api"
+        , expect = Http.expectJson GotList myDecoder
+        }
