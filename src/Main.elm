@@ -191,7 +191,7 @@ view model =
                     "No"
     in
     div [ class "container" ]
-        [ div [ class "column" ] [ text ("total: " ++ String.fromFloat (totalPercentage model) ++ "\tOK: " ++ goodToGo ++ "\nMessageBody: " ++ Json.Encode.encode 4 (messageBody model)) ]
+        [ div [ class "column" ] [ text ("total: " ++ String.fromFloat (totalPercentage model) ++ "\tOK: " ++ goodToGo ++ "\nMessageBody: " ++ Json.Encode.encode 4 (stocksEncoder model)) ]
         , div [ class "columns" ]
             [ div [ class "column is-one-third" ]
                 [ h1 [ class "title has-text-primary is-size-1" ] [ text "ticker!" ]
@@ -435,42 +435,39 @@ invalidAllocation model =
             True
 
 
-messageBody : Model -> Json.Encode.Value
-messageBody model =
+stocksEncoder : Model -> Json.Encode.Value
+stocksEncoder model =
     case ( model.startDate, model.initialBalance ) of
         ( Just startDate, Just initialBalance ) ->
             Json.Encode.object
-                [ ( "historyRequest", Json.Encode.list (allocationEncoder << extendAllocation startDate initialBalance) model.portfolio )
+                [ ( "stocks", Json.Encode.list (stockEncoder << toStock startDate initialBalance) model.portfolio )
                 ]
 
         _ ->
             Json.Encode.string "Form not submittable"
 
 
-allocationEncoder : ExtendedAllocation -> Json.Encode.Value
-allocationEncoder allocation =
+stockEncoder : Stock -> Json.Encode.Value
+stockEncoder stock =
     Json.Encode.object
-        [ ( "percentage", Json.Encode.float allocation.percentage )
-        , ( "ticker", Json.Encode.string allocation.ticker )
-        , ( "startDate", Json.Encode.string (Date.toIsoString allocation.startDate) )
-        , ( "initialBalance", Json.Encode.int allocation.initialBalance )
+        [ ( "ticker", Json.Encode.string stock.ticker )
+        , ( "startDate", Json.Encode.string (Date.toIsoString stock.startDate) )
+        , ( "initialValue", Json.Encode.float stock.initialValue )
         ]
 
 
-type alias ExtendedAllocation =
-    { percentage : Float
-    , ticker : String
+type alias Stock =
+    { ticker : String
     , startDate : Date
-    , initialBalance : Int
+    , initialValue : Float
     }
 
 
-extendAllocation : Date -> Int -> Allocation -> ExtendedAllocation
-extendAllocation startDate initialBalance allocation =
-    { percentage = allocation.percentage
-    , ticker = allocation.ticker
+toStock : Date -> Int -> Allocation -> Stock
+toStock startDate initialBalance allocation =
+    { ticker = allocation.ticker
     , startDate = startDate
-    , initialBalance = initialBalance
+    , initialValue = allocation.percentage / 100 * toFloat initialBalance
     }
 
 
@@ -478,7 +475,7 @@ postToBackend : Model -> Cmd Msg
 postToBackend model =
     Http.request
         { method = "POST"
-        , body = Http.jsonBody (messageBody model)
+        , body = Http.jsonBody (stocksEncoder model)
         , timeout = Nothing
         , tracker = Nothing
         , headers = []
