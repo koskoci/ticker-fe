@@ -7,8 +7,23 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
+import Iso8601
 import Json.Decode exposing (Decoder, decodeString, field, int, list, string)
 import Json.Encode exposing (encode, int, object, string)
+import LineChart as LineChart
+import LineChart.Area as Area
+import LineChart.Axis as Axis
+import LineChart.Axis.Intersection as Intersection
+import LineChart.Colors as Colors
+import LineChart.Container as Container
+import LineChart.Dots as Dots
+import LineChart.Events as Events
+import LineChart.Grid as Grid
+import LineChart.Interpolation as Interpolation
+import LineChart.Junk as Junk exposing (..)
+import LineChart.Legends as Legends
+import LineChart.Line as Line
+import Task
 import Time
 
 
@@ -29,6 +44,7 @@ type alias Model =
     , portfolio : List Allocation
     , currentPercentage : Maybe Float
     , currentTicker : Maybe String
+    , chartData : ChartData
     }
 
 
@@ -44,14 +60,17 @@ type BackendState
     | Success (List Int)
 
 
-type Msg
-    = GotList (Result Http.Error (List Int))
-    | SetStartAmount String
-    | SetDatePicker DatePicker.Msg
-    | SetCurrentPercentage String
-    | SetCurrentTicker String
-    | AddAllocation
-    | Submit
+type alias ChartData =
+    { nora : List Datum
+    , noah : List Datum
+    , nina : List Datum
+    }
+
+
+type alias Datum =
+    { time : Time.Posix
+    , value : Float
+    }
 
 
 init : () -> ( Model, Cmd Msg )
@@ -68,15 +87,51 @@ init _ =
             , portfolio = []
             , currentPercentage = Nothing
             , currentTicker = Nothing
+            , chartData = ChartData [] [] []
             }
 
         commands =
             Cmd.batch
                 [ pingBackend
                 , Cmd.map SetDatePicker datePickerCmd
+                , generateData
                 ]
     in
     ( initialModel, commands )
+
+
+generateData : Cmd Msg
+generateData =
+    let
+        msg =
+            ReceiveData
+                [ [ ( "2012-01-12", 100.1 )
+                  , ( "2012-01-13", 150.1 )
+                  , ( "2012-01-14", 107.1 )
+                  ]
+                , [ ( "2012-01-12", 23.1 )
+                  , ( "2012-01-13", 34.1 )
+                  , ( "2012-01-14", 45.1 )
+                  ]
+                , [ ( "2012-01-12", 13.1 )
+                  , ( "2012-01-13", 15.1 )
+                  , ( "2012-01-14", 19.1 )
+                  ]
+                ]
+    in
+    Task.succeed msg
+        |> Task.perform identity
+
+
+type Msg
+    = GotList (Result Http.Error (List Int))
+    | SetStartAmount String
+    | SetDatePicker DatePicker.Msg
+    | SetCurrentPercentage String
+    | SetCurrentTicker String
+    | AddAllocation
+    | Submit
+    | ReceiveData (List (List ( String, Float )))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -85,13 +140,16 @@ update msg model =
         GotList result ->
             case result of
                 Ok myList ->
-                    ( { model | backendState = Success myList }, Cmd.none )
+                    { model | backendState = Success myList }
+                        |> addCmd Cmd.none
 
                 Err _ ->
-                    ( { model | backendState = Failure }, Cmd.none )
+                    { model | backendState = Failure }
+                        |> addCmd Cmd.none
 
         SetStartAmount amountString ->
-            ( { model | initialBalance = String.toInt amountString }, Cmd.none )
+            { model | initialBalance = String.toInt amountString }
+                |> addCmd Cmd.none
 
         SetDatePicker subMsg ->
             let
@@ -106,23 +164,25 @@ update msg model =
                         _ ->
                             model.startDate
             in
-            ( { model
+            { model
                 | startDate = startDate
                 , datePicker = newDatePicker
-              }
-            , Cmd.none
-            )
+            }
+                |> addCmd Cmd.none
 
         SetCurrentPercentage percentage ->
-            ( { model | currentPercentage = String.toFloat percentage }, Cmd.none )
+            { model | currentPercentage = String.toFloat percentage }
+                |> addCmd Cmd.none
 
         SetCurrentTicker ticker ->
             case String.isEmpty ticker of
                 True ->
-                    ( { model | currentTicker = Nothing }, Cmd.none )
+                    { model | currentTicker = Nothing }
+                        |> addCmd Cmd.none
 
                 False ->
-                    ( { model | currentTicker = Just (String.toUpper ticker) }, Cmd.none )
+                    { model | currentTicker = Just (String.toUpper ticker) }
+                        |> addCmd Cmd.none
 
         AddAllocation ->
             let
@@ -138,22 +198,52 @@ update msg model =
             case currentAllocation model of
                 Just allocation ->
                     if invalidAllocation model then
-                        ( { model | currentPercentage = Nothing }, Cmd.none )
+                        { model | currentPercentage = Nothing }
+                            |> addCmd Cmd.none
 
                     else
-                        ( { model
+                        { model
                             | portfolio = allocation :: model.portfolio
                             , currentPercentage = Just remainingPercentage
                             , currentTicker = Nothing
-                          }
-                        , Cmd.none
-                        )
+                        }
+                            |> addCmd Cmd.none
 
                 Nothing ->
                     ( model, Cmd.none )
 
         Submit ->
             ( model, postToBackend model )
+
+        ReceiveData receivedData ->
+            model
+                |> setData receivedData
+                |> addCmd Cmd.none
+
+
+setData : List (List ( String, Float )) -> Model -> Model
+setData receivedData model =
+    case receivedData of
+        [ n1, n2, n3 ] ->
+            { model | chartData = ChartData (toData n1) (toData n2) (toData n3) }
+
+        _ ->
+            model
+
+
+toData : List ( String, Float ) -> List Datum
+toData receivedData =
+    let
+        toDatum : ( String, Float ) -> Datum
+        toDatum ( isoString, amount ) =
+            case Iso8601.toTime isoString of
+                Ok time ->
+                    Datum time amount
+
+                _ ->
+                    Datum (Time.millisToPosix 100000000) 0
+    in
+    List.map toDatum receivedData
 
 
 datePickerSettings : DatePicker.DatePicker -> DatePicker.Settings
@@ -203,7 +293,8 @@ view model =
                     , viewSubmitter model
                     ]
                 ]
-            , div [ class "column" ] []
+            , div [ class "column" ]
+                [ viewChart model ]
             ]
         ]
 
@@ -211,7 +302,7 @@ view model =
 viewStartDate : Model -> Html Msg
 viewStartDate model =
     div [ class "field" ]
-        [ label [ class "label" ] [ text "Start Date" ]
+        [ Html.label [ class "label" ] [ text "Start Date" ]
         , div [ class "control" ]
             [ DatePicker.view model.startDate (datePickerSettings model.datePicker) model.datePicker
                 |> Html.map SetDatePicker
@@ -231,7 +322,7 @@ viewStartAmount model =
                     ""
     in
     div [ class "field" ]
-        [ label [ class "label" ] [ text "Initial Balance" ]
+        [ Html.label [ class "label" ] [ text "Initial Balance" ]
         , div [ class "control has-icons-left" ]
             [ input
                 [ type_ "text"
@@ -268,7 +359,7 @@ viewAllocationAdder model =
                     ""
     in
     div [ class "field" ]
-        [ label [ class "label" ] [ text "Portfolio:" ]
+        [ Html.label [ class "label" ] [ text "Portfolio:" ]
         , div [ class "field is-grouped" ]
             [ div [ class "control" ]
                 [ button
@@ -335,6 +426,45 @@ viewSubmitter model =
         , onClick Submit
         ]
         [ text "Get Chart" ]
+
+
+viewChart : Model -> Html Msg
+viewChart model =
+    div []
+        [ LineChart.viewCustom (chartConfig model)
+            [ LineChart.line Colors.pink Dots.diamond "Nora" model.chartData.nora
+            , LineChart.line Colors.cyan Dots.circle "Noah" model.chartData.noah
+            , LineChart.line Colors.blue Dots.triangle "Nina" model.chartData.nina
+            ]
+        ]
+
+
+chartConfig : Model -> LineChart.Config Datum Msg
+chartConfig model =
+    { y = Axis.default 450 "value" .value
+    , x = Axis.time Time.utc 800 "time" (toFloat << Time.posixToMillis << .time)
+    , container = containerConfig
+    , interpolation = Interpolation.monotone
+    , intersection = Intersection.default
+    , legends = Legends.default
+    , events = Events.default
+    , junk = Junk.default
+    , grid = Grid.dots 1 Colors.gray
+    , area = Area.stacked 0.5
+    , line = Line.default
+    , dots = Dots.custom (Dots.empty 5 1)
+    }
+
+
+containerConfig : Container.Config Msg
+containerConfig =
+    Container.custom
+        { attributesHtml = []
+        , attributesSvg = []
+        , size = Container.relative
+        , margin = Container.Margin 30 100 30 70
+        , id = "line-chart-area"
+        }
 
 
 pingBackend : Cmd Msg
@@ -482,3 +612,8 @@ postToBackend model =
         , url = "http://localhost:4000/api"
         , expect = Http.expectJson GotList myDecoder
         }
+
+
+addCmd : Cmd Msg -> Model -> ( Model, Cmd Msg )
+addCmd cmd model =
+    ( model, cmd )
