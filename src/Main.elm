@@ -1,15 +1,17 @@
 module Main exposing (main)
 
 import Browser
+import Color
 import Date exposing (Date)
 import DatePicker exposing (DatePicker, defaultSettings)
+import Example
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
 import Iso8601
-import Json.Decode exposing (Decoder, decodeString, field, int, list, string)
-import Json.Encode exposing (encode, int, object, string)
+import Json.Decode as Decode exposing (Decoder, decodeString, field, int, list, map2, string)
+import Json.Encode as Encode exposing (encode, int, object, string)
 import LineChart as LineChart
 import LineChart.Area as Area
 import LineChart.Axis as Axis
@@ -23,6 +25,7 @@ import LineChart.Interpolation as Interpolation
 import LineChart.Junk as Junk exposing (..)
 import LineChart.Legends as Legends
 import LineChart.Line as Line
+import List.Extra exposing (cycle)
 import Task
 import Time
 
@@ -57,19 +60,29 @@ type alias Allocation =
 type BackendState
     = Failure
     | Loading
-    | Success (List Int)
+    | Success
 
 
-type alias ChartData =
-    { nora : List Datum
-    , noah : List Datum
-    , nina : List Datum
+type ChartData
+    = ChartData (List LineData)
+
+
+type alias LineData =
+    { ticker : String
+    , data : List Datum
     }
 
 
 type alias Datum =
     { time : Time.Posix
     , value : Float
+    }
+
+
+type alias Stock =
+    { ticker : String
+    , startDate : Date
+    , initialValue : Float
     }
 
 
@@ -87,60 +100,79 @@ init _ =
             , portfolio = []
             , currentPercentage = Nothing
             , currentTicker = Nothing
-            , chartData = ChartData [] [] []
+            , chartData = ChartData [ { ticker = "", data = [] }, { ticker = "", data = [] }, { ticker = "", data = [] } ]
             }
 
         commands =
-            Cmd.batch
-                [ pingBackend
-                , Cmd.map SetDatePicker datePickerCmd
-                , generateData
-                ]
+            Cmd.map SetDatePicker datePickerCmd
     in
     ( initialModel, commands )
 
 
-generateData : Cmd Msg
-generateData =
+decodeHistory : Decoder ChartData
+decodeHistory =
+    Decode.at [ "history" ] decodeRest
+
+
+decodeRest : Decoder ChartData
+decodeRest =
+    Decode.map ChartData (Decode.list decodeLineData)
+
+
+decodeLineData : Decoder LineData
+decodeLineData =
+    Decode.map2 LineData
+        (Decode.field "ticker" Decode.string)
+        (Decode.field "data" (Decode.list decodeDatum))
+
+
+toDatum : ( Float, String ) -> Datum
+toDatum ( amount, isoString ) =
+    case Iso8601.toTime isoString of
+        Ok time ->
+            Datum time amount
+
+        _ ->
+            Datum (Time.millisToPosix 0) 0
+
+
+decodeDatum : Decoder Datum
+decodeDatum =
     let
-        msg =
-            ReceiveData
-                [ [ ( "2012-01-12", 100.1 )
-                  , ( "2012-01-13", 150.1 )
-                  , ( "2012-01-14", 107.1 )
-                  ]
-                , [ ( "2012-01-12", 23.1 )
-                  , ( "2012-01-13", 34.1 )
-                  , ( "2012-01-14", 45.1 )
-                  ]
-                , [ ( "2012-01-12", 13.1 )
-                  , ( "2012-01-13", 15.1 )
-                  , ( "2012-01-14", 19.1 )
-                  ]
-                ]
+        tupleDecoder : Decoder ( Float, String )
+        tupleDecoder =
+            Decode.map2
+                Tuple.pair
+                (Decode.index 0 Decode.float)
+                (Decode.index 1 Decode.string)
     in
-    Task.succeed msg
-        |> Task.perform identity
+    Decode.map toDatum tupleDecoder
+
+
+type alias IncomingData =
+    List
+        { ticker : String
+        , data : List ( String, Float )
+        }
 
 
 type Msg
-    = GotList (Result Http.Error (List Int))
+    = GotHistory (Result Http.Error ChartData)
     | SetStartAmount String
     | SetDatePicker DatePicker.Msg
     | SetCurrentPercentage String
     | SetCurrentTicker String
     | AddAllocation
     | Submit
-    | ReceiveData (List (List ( String, Float )))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotList result ->
-            case result of
-                Ok myList ->
-                    { model | backendState = Success myList }
+        GotHistory response ->
+            case response of
+                Ok chartData ->
+                    { model | backendState = Success, chartData = chartData }
                         |> addCmd Cmd.none
 
                 Err _ ->
@@ -215,36 +247,6 @@ update msg model =
         Submit ->
             ( model, postToBackend model )
 
-        ReceiveData receivedData ->
-            model
-                |> setData receivedData
-                |> addCmd Cmd.none
-
-
-setData : List (List ( String, Float )) -> Model -> Model
-setData receivedData model =
-    case receivedData of
-        [ n1, n2, n3 ] ->
-            { model | chartData = ChartData (toData n1) (toData n2) (toData n3) }
-
-        _ ->
-            model
-
-
-toData : List ( String, Float ) -> List Datum
-toData receivedData =
-    let
-        toDatum : ( String, Float ) -> Datum
-        toDatum ( isoString, amount ) =
-            case Iso8601.toTime isoString of
-                Ok time ->
-                    Datum time amount
-
-                _ ->
-                    Datum (Time.millisToPosix 100000000) 0
-    in
-    List.map toDatum receivedData
-
 
 datePickerSettings : DatePicker.DatePicker -> DatePicker.Settings
 datePickerSettings datePicker =
@@ -281,7 +283,7 @@ view model =
                     "No"
     in
     div [ class "container" ]
-        [ div [ class "column" ] [ text ("total: " ++ String.fromFloat (totalPercentage model) ++ "\tOK: " ++ goodToGo ++ "\nMessageBody: " ++ Json.Encode.encode 4 (stocksEncoder model)) ]
+        [ div [ class "column" ] [ text ("total: " ++ String.fromFloat (totalPercentage model) ++ "\tOK: " ++ goodToGo ++ "\nMessageBody: " ++ Encode.encode 4 (stocksEncoder model)) ]
         , div [ class "columns" ]
             [ div [ class "column is-one-third" ]
                 [ h1 [ class "title has-text-primary is-size-1" ] [ text "ticker!" ]
@@ -430,13 +432,24 @@ viewSubmitter model =
 
 viewChart : Model -> Html Msg
 viewChart model =
-    div []
-        [ LineChart.viewCustom (chartConfig model)
-            [ LineChart.line Colors.pink Dots.diamond "Nora" model.chartData.nora
-            , LineChart.line Colors.cyan Dots.circle "Noah" model.chartData.noah
-            , LineChart.line Colors.blue Dots.triangle "Nina" model.chartData.nina
-            ]
-        ]
+    let
+        mapper =
+            \item color -> LineChart.line color Dots.none item.ticker item.data
+    in
+    case model.chartData of
+        ChartData chartData ->
+            div []
+                [ LineChart.viewCustom (chartConfig model) (List.map2 mapper chartData (colorOptions model))
+                ]
+
+
+colorOptions : Model -> List Color.Color
+colorOptions model =
+    let
+        options =
+            [ Colors.pink, Colors.cyan, Colors.blue, Colors.teal, Colors.gold, Colors.purple, Colors.red, Colors.rust, Colors.green, Colors.strongBlue ]
+    in
+    cycle (List.length model.portfolio) options
 
 
 chartConfig : Model -> LineChart.Config Datum Msg
@@ -467,27 +480,14 @@ containerConfig =
         }
 
 
-pingBackend : Cmd Msg
-pingBackend =
-    Http.request
-        { method = "GET"
-        , body = Http.emptyBody
-        , timeout = Nothing
-        , tracker = Nothing
-        , headers = []
-        , url = "http://localhost:4000/api"
-        , expect = Http.expectJson GotList myDecoder
-        }
-
-
 myDecoder : Decoder (List Int)
 myDecoder =
-    field "data" (field "draw" (Json.Decode.list Json.Decode.int))
+    field "name" (field "draw" (Decode.list Decode.int))
 
 
 onBlurWithTargetValue : (String -> msg) -> Attribute msg
 onBlurWithTargetValue toMsg =
-    on "blur" (Json.Decode.map toMsg targetValue)
+    on "blur" (Decode.map toMsg targetValue)
 
 
 currentAllocation : Model -> Maybe Allocation
@@ -526,13 +526,13 @@ onEnter msg =
     let
         isEnterKey keyCode =
             if keyCode == 13 then
-                Json.Decode.succeed msg
+                Decode.succeed msg
 
             else
-                Json.Decode.fail "silent failure :)"
+                Decode.fail "silent failure :)"
     in
     on "keyup" <|
-        Json.Decode.andThen isEnterKey Html.Events.keyCode
+        Decode.andThen isEnterKey Html.Events.keyCode
 
 
 allocationIncomplete : Model -> Bool
@@ -565,32 +565,25 @@ invalidAllocation model =
             True
 
 
-stocksEncoder : Model -> Json.Encode.Value
+stocksEncoder : Model -> Encode.Value
 stocksEncoder model =
     case ( model.startDate, model.initialBalance ) of
         ( Just startDate, Just initialBalance ) ->
-            Json.Encode.object
-                [ ( "stocks", Json.Encode.list (stockEncoder << toStock startDate initialBalance) model.portfolio )
+            Encode.object
+                [ ( "stocks", Encode.list (stockEncoder << toStock startDate initialBalance) model.portfolio )
                 ]
 
         _ ->
-            Json.Encode.string "Form not submittable"
+            Encode.string "Form not submittable"
 
 
-stockEncoder : Stock -> Json.Encode.Value
+stockEncoder : Stock -> Encode.Value
 stockEncoder stock =
-    Json.Encode.object
-        [ ( "ticker", Json.Encode.string stock.ticker )
-        , ( "startDate", Json.Encode.string (Date.toIsoString stock.startDate) )
-        , ( "initialValue", Json.Encode.float stock.initialValue )
+    Encode.object
+        [ ( "ticker", Encode.string stock.ticker )
+        , ( "startDate", Encode.string (Date.toIsoString stock.startDate) )
+        , ( "initialValue", Encode.float stock.initialValue )
         ]
-
-
-type alias Stock =
-    { ticker : String
-    , startDate : Date
-    , initialValue : Float
-    }
 
 
 toStock : Date -> Int -> Allocation -> Stock
@@ -603,15 +596,26 @@ toStock startDate initialBalance allocation =
 
 postToBackend : Model -> Cmd Msg
 postToBackend model =
-    Http.request
-        { method = "POST"
-        , body = Http.jsonBody (stocksEncoder model)
-        , timeout = Nothing
-        , tracker = Nothing
-        , headers = []
-        , url = "http://localhost:4000/api"
-        , expect = Http.expectJson GotList myDecoder
-        }
+    -- Http.request
+    --     { method = "POST"
+    --     , body = Http.jsonBody (stocksEncoder model)
+    --     , timeout = Nothing
+    --     , tracker = Nothing
+    --     , headers = []
+    --     , url = "http://localhost:4000/api"
+    --     , expect = Http.expectJson GotHistory decodeHistory
+    --     }
+    let
+        chartData =
+            case Decode.decodeString decodeHistory Example.json of
+                Ok data ->
+                    data
+
+                Err _ ->
+                    ChartData [ { ticker = "", data = [] }, { ticker = "", data = [] }, { ticker = "", data = [] } ]
+    in
+    Task.succeed (GotHistory (Ok chartData))
+        |> Task.perform identity
 
 
 addCmd : Cmd Msg -> Model -> ( Model, Cmd Msg )
