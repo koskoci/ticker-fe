@@ -273,20 +273,11 @@ subscriptions model =
 
 view : Model -> Html Msg
 view model =
-    let
-        goodToGo =
-            case formSubmittable model of
-                True ->
-                    "Yes"
-
-                False ->
-                    "No"
-    in
     div [ class "container" ]
-        [ div [ class "column" ] [ text ("total: " ++ String.fromFloat (totalPercentage model) ++ "\tOK: " ++ goodToGo ++ "\nMessageBody: " ++ Encode.encode 4 (stocksEncoder model)) ]
-        , div [ class "columns" ]
+        [ div [ class "columns" ]
             [ div [ class "column is-one-third" ]
-                [ h1 [ class "title has-text-primary is-size-1" ] [ text "ticker!" ]
+                [ br [] []
+                , h1 [ class "title has-text-primary is-size-1" ] [ text "ticker!" ]
                 , Html.form [ class "form" ]
                     [ viewStartDate model
                     , viewStartAmount model
@@ -596,26 +587,15 @@ toStock startDate initialBalance allocation =
 
 postToBackend : Model -> Cmd Msg
 postToBackend model =
-    -- Http.request
-    --     { method = "POST"
-    --     , body = Http.jsonBody (stocksEncoder model)
-    --     , timeout = Nothing
-    --     , tracker = Nothing
-    --     , headers = []
-    --     , url = "http://localhost:4000/api"
-    --     , expect = Http.expectJson GotHistory decodeHistory
-    --     }
-    let
-        chartData =
-            case Decode.decodeString decodeHistory Example.json of
-                Ok data ->
-                    data
-
-                Err _ ->
-                    ChartData [ { ticker = "", data = [] }, { ticker = "", data = [] }, { ticker = "", data = [] } ]
-    in
-    Task.succeed (GotHistory (Ok chartData))
-        |> Task.perform identity
+    Http.request
+        { method = "POST"
+        , body = Http.jsonBody (stocksEncoder model)
+        , timeout = Nothing
+        , tracker = Nothing
+        , headers = []
+        , url = "http://localhost:4000/api"
+        , expect = Http.expectJson GotHistory decodeHistory
+        }
 
 
 addCmd : Cmd Msg -> Model -> ( Model, Cmd Msg )
