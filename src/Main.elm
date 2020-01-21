@@ -5,6 +5,8 @@ import Color
 import Date exposing (Date)
 import DatePicker exposing (DatePicker, defaultSettings)
 import Example
+import FormatNumber
+import FormatNumber.Locales exposing (usLocale)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -25,7 +27,7 @@ import LineChart.Interpolation as Interpolation
 import LineChart.Junk as Junk exposing (..)
 import LineChart.Legends as Legends
 import LineChart.Line as Line
-import List.Extra exposing (cycle)
+import List.Extra exposing (cycle, last)
 import Task
 import Time
 
@@ -48,6 +50,7 @@ type alias Model =
     , currentPercentage : Maybe Float
     , currentTicker : Maybe String
     , chartData : ChartData
+    , currentWorth : Maybe Float
     }
 
 
@@ -79,6 +82,23 @@ type alias Datum =
     }
 
 
+stockWorth : LineData -> Float
+stockWorth lineData =
+    case List.Extra.last lineData.data of
+        Just datum ->
+            datum.value
+
+        Nothing ->
+            0
+
+
+currentWorth : ChartData -> Maybe Float
+currentWorth chart =
+    case chart of
+        ChartData chartData ->
+            Just (chartData |> List.map stockWorth |> List.sum)
+
+
 type alias Stock =
     { ticker : String
     , startDate : Date
@@ -101,6 +121,7 @@ init _ =
             , currentPercentage = Nothing
             , currentTicker = Nothing
             , chartData = ChartData [ { ticker = "", data = [] }, { ticker = "", data = [] }, { ticker = "", data = [] } ]
+            , currentWorth = Nothing
             }
 
         commands =
@@ -172,7 +193,7 @@ update msg model =
         GotHistory response ->
             case response of
                 Ok chartData ->
-                    { model | backendState = Success, chartData = chartData }
+                    { model | backendState = Success, chartData = chartData, currentWorth = currentWorth chartData }
                         |> addCmd Cmd.none
 
                 Err _ ->
@@ -284,6 +305,7 @@ view model =
                     , viewAllocationAdder model
                     , viewAllocationLister model
                     , viewSubmitter model
+                    , viewCurrentWorth model
                     ]
                 ]
             , div [ class "column" ]
@@ -419,6 +441,23 @@ viewSubmitter model =
         , onClick Submit
         ]
         [ text "Get Chart" ]
+
+
+viewCurrentWorth : Model -> Html Msg
+viewCurrentWorth model =
+    let
+        message =
+            case model.currentWorth of
+                Just sum ->
+                    "Your portfolio is now worth $ " ++ FormatNumber.format usLocale sum
+
+                Nothing ->
+                    ""
+    in
+    div []
+        [ br [] []
+        , h1 [ class "title has-text-primary is-size-5" ] [ text message ]
+        ]
 
 
 viewChart : Model -> Html Msg
