@@ -1,42 +1,33 @@
 module Main exposing (main)
 
 import Browser
-import Color
+import Data.Allocation as Allocation exposing (Allocation)
+import Data.Chart as Chart exposing (Chart(..))
+import Data.Datum as Datum exposing (Datum)
+import Data.Line as Line exposing (Line)
+import Data.Stock as Stock exposing (Stock)
 import Date exposing (Date)
 import DatePicker exposing (DatePicker, defaultSettings)
-import Example
 import FormatNumber
 import FormatNumber.Locales exposing (usLocale)
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (..)
+import Helpers.LineChart as Helper
+import Html exposing (Html, br, button, div, h1, i, input, li, span, text, ul)
+import Html.Attributes exposing (class, disabled, id, placeholder, type_, value)
+import Html.Events exposing (onClick, onInput)
 import Http
-import Iso8601
-import Json.Decode as Decode exposing (Decoder, decodeString, field, int, list, map2, string)
 import Json.Encode as Encode exposing (encode, int, object, string)
 import LineChart as LineChart
-import LineChart.Area as Area
-import LineChart.Axis as Axis
-import LineChart.Axis.Intersection as Intersection
-import LineChart.Colors as Colors
-import LineChart.Container as Container
 import LineChart.Dots as Dots
-import LineChart.Events as Events
-import LineChart.Grid as Grid
-import LineChart.Interpolation as Interpolation
-import LineChart.Junk as Junk exposing (..)
-import LineChart.Legends as Legends
-import LineChart.Line as Line
-import List.Extra exposing (cycle, last)
-import Task
+import Maybe.Extra exposing (isNothing)
 import Time
+import Util exposing (addCmd, onBlurWithTargetValue, onEnter)
 
 
 main =
     Browser.element
         { init = init
         , update = update
-        , subscriptions = subscriptions
+        , subscriptions = \_ -> Sub.none
         , view = view
         }
 
@@ -49,14 +40,8 @@ type alias Model =
     , portfolio : List Allocation
     , currentPercentage : Maybe Float
     , currentTicker : Maybe String
-    , chartData : ChartData
+    , chart : Chart
     , currentWorth : Maybe Float
-    }
-
-
-type alias Allocation =
-    { percentage : Float
-    , ticker : String
     }
 
 
@@ -64,46 +49,6 @@ type BackendState
     = Failure
     | Loading
     | Success
-
-
-type ChartData
-    = ChartData (List LineData)
-
-
-type alias LineData =
-    { ticker : String
-    , data : List Datum
-    }
-
-
-type alias Datum =
-    { time : Time.Posix
-    , value : Float
-    }
-
-
-stockWorth : LineData -> Float
-stockWorth lineData =
-    case List.Extra.last lineData.data of
-        Just datum ->
-            datum.value
-
-        Nothing ->
-            0
-
-
-currentWorth : ChartData -> Maybe Float
-currentWorth chart =
-    case chart of
-        ChartData chartData ->
-            Just (chartData |> List.map stockWorth |> List.sum)
-
-
-type alias Stock =
-    { ticker : String
-    , startDate : Date
-    , initialValue : Float
-    }
 
 
 init : () -> ( Model, Cmd Msg )
@@ -120,7 +65,7 @@ init _ =
             , portfolio = []
             , currentPercentage = Nothing
             , currentTicker = Nothing
-            , chartData = ChartData [ { ticker = "", data = [] }, { ticker = "", data = [] }, { ticker = "", data = [] } ]
+            , chart = Chart [ { ticker = "", data = [] }, { ticker = "", data = [] }, { ticker = "", data = [] } ]
             , currentWorth = Nothing
             }
 
@@ -130,55 +75,8 @@ init _ =
     ( initialModel, commands )
 
 
-decodeHistory : Decoder ChartData
-decodeHistory =
-    Decode.at [ "history" ] decodeRest
-
-
-decodeRest : Decoder ChartData
-decodeRest =
-    Decode.map ChartData (Decode.list decodeLineData)
-
-
-decodeLineData : Decoder LineData
-decodeLineData =
-    Decode.map2 LineData
-        (Decode.field "ticker" Decode.string)
-        (Decode.field "data" (Decode.list decodeDatum))
-
-
-toDatum : ( Float, String ) -> Datum
-toDatum ( amount, isoString ) =
-    case Iso8601.toTime isoString of
-        Ok time ->
-            Datum time amount
-
-        _ ->
-            Datum (Time.millisToPosix 0) 0
-
-
-decodeDatum : Decoder Datum
-decodeDatum =
-    let
-        tupleDecoder : Decoder ( Float, String )
-        tupleDecoder =
-            Decode.map2
-                Tuple.pair
-                (Decode.index 0 Decode.float)
-                (Decode.index 1 Decode.string)
-    in
-    Decode.map toDatum tupleDecoder
-
-
-type alias IncomingData =
-    List
-        { ticker : String
-        , data : List ( String, Float )
-        }
-
-
 type Msg
-    = GotHistory (Result Http.Error ChartData)
+    = GotHistory (Result Http.Error Chart)
     | SetStartAmount String
     | SetDatePicker DatePicker.Msg
     | SetCurrentPercentage String
@@ -192,8 +90,8 @@ update msg model =
     case msg of
         GotHistory response ->
             case response of
-                Ok chartData ->
-                    { model | backendState = Success, chartData = chartData, currentWorth = currentWorth chartData }
+                Ok chart ->
+                    { model | backendState = Success, chart = chart, currentWorth = Chart.worth chart }
                         |> addCmd Cmd.none
 
                 Err _ ->
@@ -248,9 +146,9 @@ update msg model =
                         Nothing ->
                             100 - totalPercentage model
             in
-            case currentAllocation model of
+            case Allocation.current model.currentPercentage model.currentTicker of
                 Just allocation ->
-                    if invalidAllocation model then
+                    if percentageOverHundred model then
                         { model | currentPercentage = Nothing }
                             |> addCmd Cmd.none
 
@@ -287,11 +185,6 @@ datePickerSettings datePicker =
     }
 
 
-subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.none
-
-
 view : Model -> Html Msg
 view model =
     div [ class "container" ]
@@ -309,7 +202,7 @@ view model =
                     ]
                 ]
             , div [ class "column" ]
-                [ viewChart model ]
+                [ viewChart model.chart model.portfolio ]
             ]
         ]
 
@@ -380,7 +273,7 @@ viewAllocationAdder model =
                 [ button
                     [ type_ "button"
                     , class "button is-primary"
-                    , disabled (invalidAllocation model)
+                    , disabled (adderDisabled model)
                     , onClick AddAllocation
                     ]
                     [ span [ class "icon" ]
@@ -460,78 +353,20 @@ viewCurrentWorth model =
         ]
 
 
-viewChart : Model -> Html Msg
-viewChart model =
+viewChart : Chart -> List Allocation -> Html Msg
+viewChart (Chart chart) portfolio =
     let
         mapper =
             \item color -> LineChart.line color Dots.none item.ticker item.data
     in
-    case model.chartData of
-        ChartData chartData ->
-            div []
-                [ LineChart.viewCustom (chartConfig model) (List.map2 mapper chartData (colorOptions model))
-                ]
+    div []
+        [ LineChart.viewCustom Helper.chartConfig (List.map2 mapper chart (Helper.colorOptions portfolio))
+        ]
 
 
-colorOptions : Model -> List Color.Color
-colorOptions model =
-    let
-        options =
-            [ Colors.pink, Colors.cyan, Colors.blue, Colors.teal, Colors.gold, Colors.purple, Colors.red, Colors.rust, Colors.green, Colors.strongBlue ]
-    in
-    cycle (List.length model.portfolio) options
-
-
-chartConfig : Model -> LineChart.Config Datum Msg
-chartConfig model =
-    { y = Axis.default 450 "value" .value
-    , x = Axis.time Time.utc 800 "time" (toFloat << Time.posixToMillis << .time)
-    , container = containerConfig
-    , interpolation = Interpolation.monotone
-    , intersection = Intersection.default
-    , legends = Legends.grouped .max .max -30 0
-    , events = Events.default
-    , junk = Junk.default
-    , grid = Grid.dots 1 Colors.gray
-    , area = Area.stacked 0.5
-    , line = Line.default
-    , dots = Dots.custom (Dots.empty 5 1)
-    }
-
-
-containerConfig : Container.Config Msg
-containerConfig =
-    Container.custom
-        { attributesHtml = []
-        , attributesSvg = []
-        , size = Container.relative
-        , margin = Container.Margin 30 100 30 70
-        , id = "line-chart-area"
-        }
-
-
-myDecoder : Decoder (List Int)
-myDecoder =
-    field "name" (field "draw" (Decode.list Decode.int))
-
-
-onBlurWithTargetValue : (String -> msg) -> Attribute msg
-onBlurWithTargetValue toMsg =
-    on "blur" (Decode.map toMsg targetValue)
-
-
-currentAllocation : Model -> Maybe Allocation
-currentAllocation model =
-    case ( model.currentPercentage, model.currentTicker ) of
-        ( Just percentage, Just ticker ) ->
-            if percentage == 0 then
-                Nothing
-
-            else
-                Just (Allocation percentage ticker)
-
-        _ ->
-            Nothing
+adderDisabled : Model -> Bool
+adderDisabled model =
+    isNothing (Allocation.current model.currentPercentage model.currentTicker) || percentageOverHundred model
 
 
 totalPercentage : Model -> Float
@@ -551,30 +386,6 @@ formSubmittable model =
             False
 
 
-onEnter : msg -> Html.Attribute msg
-onEnter msg =
-    let
-        isEnterKey keyCode =
-            if keyCode == 13 then
-                Decode.succeed msg
-
-            else
-                Decode.fail "silent failure :)"
-    in
-    on "keyup" <|
-        Decode.andThen isEnterKey Html.Events.keyCode
-
-
-allocationIncomplete : Model -> Bool
-allocationIncomplete model =
-    case currentAllocation model of
-        Nothing ->
-            True
-
-        _ ->
-            False
-
-
 percentageOverHundred : Model -> Bool
 percentageOverHundred model =
     case model.currentPercentage of
@@ -585,58 +396,26 @@ percentageOverHundred model =
             False
 
 
-invalidAllocation : Model -> Bool
-invalidAllocation model =
-    case ( allocationIncomplete model, percentageOverHundred model ) of
-        ( False, False ) ->
-            False
-
-        _ ->
-            True
-
-
-stocksEncoder : Model -> Encode.Value
-stocksEncoder model =
+requestEncoder : Model -> Encode.Value
+requestEncoder model =
     case ( model.startDate, model.initialBalance ) of
         ( Just startDate, Just initialBalance ) ->
             Encode.object
-                [ ( "stocks", Encode.list (stockEncoder << toStock startDate initialBalance) model.portfolio )
+                [ ( "stocks", Encode.list (Stock.encoder << Stock.build startDate initialBalance) model.portfolio )
                 ]
 
         _ ->
             Encode.string "Form not submittable"
 
 
-stockEncoder : Stock -> Encode.Value
-stockEncoder stock =
-    Encode.object
-        [ ( "ticker", Encode.string stock.ticker )
-        , ( "startDate", Encode.string (Date.toIsoString stock.startDate) )
-        , ( "initialValue", Encode.float stock.initialValue )
-        ]
-
-
-toStock : Date -> Int -> Allocation -> Stock
-toStock startDate initialBalance allocation =
-    { ticker = allocation.ticker
-    , startDate = startDate
-    , initialValue = allocation.percentage / 100 * toFloat initialBalance
-    }
-
-
 postToBackend : Model -> Cmd Msg
 postToBackend model =
     Http.request
         { method = "POST"
-        , body = Http.jsonBody (stocksEncoder model)
+        , body = Http.jsonBody (requestEncoder model)
         , timeout = Nothing
         , tracker = Nothing
         , headers = []
         , url = "http://localhost:4000/api"
-        , expect = Http.expectJson GotHistory decodeHistory
+        , expect = Http.expectJson GotHistory Chart.decoder
         }
-
-
-addCmd : Cmd Msg -> Model -> ( Model, Cmd Msg )
-addCmd cmd model =
-    ( model, cmd )
