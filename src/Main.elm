@@ -70,7 +70,7 @@ init _ =
             }
 
         commands =
-            Cmd.map SetDatePicker datePickerCmd
+            Cmd.map SetDate datePickerCmd
     in
     ( initialModel, commands )
 
@@ -78,9 +78,9 @@ init _ =
 type Msg
     = GotHistory (Result Http.Error Chart)
     | SetStartAmount String
-    | SetDatePicker DatePicker.Msg
-    | SetCurrentPercentage String
-    | SetCurrentTicker String
+    | SetDate DatePicker.Msg
+    | SetPercentage String
+    | SetTicker String
     | AddAllocation
     | Submit
 
@@ -102,7 +102,7 @@ update msg model =
             { model | initialBalance = String.toInt amountString }
                 |> addCmd Cmd.none
 
-        SetDatePicker subMsg ->
+        SetDate subMsg ->
             let
                 ( newDatePicker, dateEvent ) =
                     DatePicker.update (datePickerSettings model.datePicker) subMsg model.datePicker
@@ -121,11 +121,11 @@ update msg model =
             }
                 |> addCmd Cmd.none
 
-        SetCurrentPercentage percentage ->
+        SetPercentage percentage ->
             { model | currentPercentage = String.toFloat percentage }
                 |> addCmd Cmd.none
 
-        SetCurrentTicker ticker ->
+        SetTicker ticker ->
             case String.isEmpty ticker of
                 True ->
                     { model | currentTicker = Nothing }
@@ -167,24 +167,6 @@ update msg model =
             ( model, postToBackend model )
 
 
-datePickerSettings : DatePicker.DatePicker -> DatePicker.Settings
-datePickerSettings datePicker =
-    let
-        isDisabledAfter : Date -> Date -> Bool
-        isDisabledAfter laterDate date =
-            Date.compare laterDate date == LT
-
-        today =
-            DatePicker.getInitialDate datePicker
-    in
-    { defaultSettings
-        | inputClassList = [ ( "input", True ) ]
-        , isDisabled = isDisabledAfter today
-        , firstDayOfWeek = Time.Mon
-        , placeholder = "Click here to pick a date"
-    }
-
-
 view : Model -> Html Msg
 view model =
     div [ class "container" ]
@@ -213,7 +195,7 @@ viewStartDate model =
         [ Html.label [ class "label" ] [ text "Start Date" ]
         , div [ class "control" ]
             [ DatePicker.view model.startDate (datePickerSettings model.datePicker) model.datePicker
-                |> Html.map SetDatePicker
+                |> Html.map SetDate
             ]
         ]
 
@@ -284,7 +266,7 @@ viewAllocationAdder model =
                 [ input
                     [ type_ "text"
                     , value currentPercentage
-                    , onBlurWithTargetValue SetCurrentPercentage
+                    , onBlurWithTargetValue SetPercentage
                     , class "input"
                     , id "percentage-input"
                     ]
@@ -297,7 +279,7 @@ viewAllocationAdder model =
                 [ input
                     [ type_ "text"
                     , value currentTicker
-                    , onInput SetCurrentTicker
+                    , onInput SetTicker
                     , onEnter AddAllocation
                     , class "input"
                     , placeholder "ticker"
@@ -362,6 +344,24 @@ viewChart (Chart chart) portfolio =
     div []
         [ LineChart.viewCustom Helper.chartConfig (List.map2 mapper chart (Helper.colorOptions portfolio))
         ]
+
+
+datePickerSettings : DatePicker.DatePicker -> DatePicker.Settings
+datePickerSettings datePicker =
+    let
+        isDisabledAfter : Date -> Date -> Bool
+        isDisabledAfter laterDate date =
+            Date.compare laterDate date == LT
+
+        today =
+            DatePicker.getInitialDate datePicker
+    in
+    { defaultSettings
+        | inputClassList = [ ( "input", True ) ]
+        , isDisabled = isDisabledAfter today
+        , firstDayOfWeek = Time.Mon
+        , placeholder = "Click here to pick a date"
+    }
 
 
 adderDisabled : Model -> Bool
