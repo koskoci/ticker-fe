@@ -13,7 +13,7 @@ import LineChart.Dots as Dots
 import LineChart.Events as Events
 import LineChart.Grid as Grid
 import LineChart.Interpolation as Interpolation
-import LineChart.Junk as Junk exposing (..)
+import LineChart.Junk as Junk
 import LineChart.Legends as Legends
 import LineChart.Line as Line
 import List.Extra exposing (cycle)

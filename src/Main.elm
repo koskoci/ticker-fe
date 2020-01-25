@@ -3,9 +3,7 @@ module Main exposing (main)
 import Browser
 import Data.Allocation as Allocation exposing (Allocation)
 import Data.Chart as Chart exposing (Chart(..))
-import Data.Datum as Datum exposing (Datum)
-import Data.Line as Line exposing (Line)
-import Data.Stock as Stock exposing (Stock)
+import Data.Stock as Stock
 import Date exposing (Date)
 import DatePicker exposing (DatePicker, defaultSettings)
 import FormatNumber
@@ -15,7 +13,7 @@ import Html exposing (Html, br, button, div, h1, i, input, li, span, text, ul)
 import Html.Attributes exposing (class, disabled, id, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Http
-import Json.Encode as Encode exposing (encode, int, object, string)
+import Json.Encode as Encode exposing (object, string)
 import LineChart as LineChart
 import LineChart.Dots as Dots
 import Maybe.Extra exposing (isNothing)
@@ -23,6 +21,7 @@ import Time
 import Util exposing (addCmd, onBlurWithTargetValue, onEnter)
 
 
+main : Program () Model Msg
 main =
     Browser.element
         { init = init
@@ -126,14 +125,13 @@ update msg model =
                 |> addCmd Cmd.none
 
         SetTicker ticker ->
-            case String.isEmpty ticker of
-                True ->
-                    { model | currentTicker = Nothing }
-                        |> addCmd Cmd.none
+            if String.isEmpty ticker then
+                { model | currentTicker = Nothing }
+                    |> addCmd Cmd.none
 
-                False ->
-                    { model | currentTicker = Just (String.toUpper ticker) }
-                        |> addCmd Cmd.none
+            else
+                { model | currentTicker = Just (String.toUpper ticker) }
+                    |> addCmd Cmd.none
 
         AddAllocation ->
             let
