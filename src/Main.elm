@@ -2,7 +2,7 @@ module Main exposing (main)
 
 import Browser
 import Data.Allocation as Allocation exposing (Allocation)
-import Data.Chart as Chart exposing (Chart(..))
+import Data.Chart as Chart exposing (Chart)
 import Data.Stock as Stock
 import Date exposing (Date)
 import DatePicker exposing (DatePicker, defaultSettings)
@@ -64,7 +64,7 @@ init _ =
             , portfolio = []
             , currentPercentage = Nothing
             , currentTicker = Nothing
-            , chart = Chart [ { ticker = "", data = [] }, { ticker = "", data = [] }, { ticker = "", data = [] } ]
+            , chart = Nothing
             , currentWorth = Nothing
             }
 
@@ -319,10 +319,13 @@ viewSubmitter model =
 viewCurrentWorth : Model -> Html Msg
 viewCurrentWorth model =
     let
+        nbsp =
+            "\u{00A0}"
+
         message =
             case model.currentWorth of
                 Just sum ->
-                    "Your portfolio is now worth $ " ++ FormatNumber.format usLocale sum
+                    "Your portfolio is now worth $" ++ nbsp ++ FormatNumber.format usLocale sum
 
                 Nothing ->
                     ""
@@ -334,14 +337,19 @@ viewCurrentWorth model =
 
 
 viewChart : Chart -> List Allocation -> Html Msg
-viewChart (Chart chart) portfolio =
-    let
-        mapper =
-            \item color -> LineChart.line color Dots.none item.ticker item.data
-    in
-    div []
-        [ LineChart.viewCustom Helper.chartConfig (List.map2 mapper chart (Helper.colorOptions portfolio))
-        ]
+viewChart chart portfolio =
+    case chart of
+        Just lineList ->
+            let
+                mapper =
+                    \item color -> LineChart.line color Dots.none item.ticker item.data
+            in
+            div []
+                [ LineChart.viewCustom Helper.chartConfig (List.map2 mapper lineList (Helper.colorOptions portfolio))
+                ]
+
+        Nothing ->
+            div [] []
 
 
 datePickerSettings : DatePicker.DatePicker -> DatePicker.Settings
