@@ -2,7 +2,7 @@ module Main exposing (main)
 
 import Browser
 import Data.Allocation as Allocation exposing (Allocation)
-import Data.Chart as Chart exposing (Chart)
+import Data.Chart as Chart exposing (Chart(..))
 import Data.Stock as Stock
 import Date exposing (Date)
 import DatePicker exposing (DatePicker, defaultSettings)
@@ -17,6 +17,7 @@ import Json.Encode as Encode exposing (object, string)
 import LineChart as LineChart
 import LineChart.Dots as Dots
 import Maybe.Extra exposing (isNothing)
+import RemoteData exposing (RemoteData(..), WebData)
 import Time
 import Util exposing (addCmd, onBlurWithTargetValue, onEnter)
 
@@ -32,22 +33,15 @@ main =
 
 
 type alias Model =
-    { backendState : BackendState
-    , initialBalance : Maybe Int
+    { initialBalance : Maybe Int
     , startDate : Maybe Date
     , datePicker : DatePicker
     , portfolio : List Allocation
     , currentPercentage : Maybe Float
     , currentTicker : Maybe String
-    , chart : Chart
+    , chartRequest : WebData Chart
     , currentWorth : Maybe Float
     }
-
-
-type BackendState
-    = Failure
-    | Loading
-    | Success
 
 
 init : () -> ( Model, Cmd Msg )
@@ -57,14 +51,13 @@ init _ =
             DatePicker.init
 
         initialModel =
-            { backendState = Loading
-            , initialBalance = Nothing
+            { initialBalance = Nothing
             , startDate = Nothing
             , datePicker = datePicker
             , portfolio = []
             , currentPercentage = Nothing
             , currentTicker = Nothing
-            , chart = Nothing
+            , chartRequest = NotAsked
             , currentWorth = Nothing
             }
 
@@ -75,7 +68,7 @@ init _ =
 
 
 type Msg
-    = GotHistory (Result Http.Error Chart)
+    = GotHistory (WebData Chart)
     | SetStartAmount String
     | SetDate DatePicker.Msg
     | SetPercentage String
@@ -87,14 +80,14 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotHistory response ->
-            case response of
-                Ok chart ->
-                    { model | backendState = Success, chart = chart, currentWorth = Chart.worth chart }
+        GotHistory chartRequest ->
+            case chartRequest of
+                Success chart ->
+                    { model | chartRequest = chartRequest, currentWorth = Just (Chart.worth chart) }
                         |> addCmd Cmd.none
 
-                Err _ ->
-                    { model | backendState = Failure }
+                _ ->
+                    { model | currentWorth = Nothing }
                         |> addCmd Cmd.none
 
         SetStartAmount amountString ->
@@ -162,7 +155,8 @@ update msg model =
                     ( model, Cmd.none )
 
         Submit ->
-            ( model, postToBackend model )
+            { model | chartRequest = Loading }
+                |> addCmd (postToBackend model)
 
 
 view : Model -> Html Msg
@@ -181,8 +175,7 @@ view model =
                     , viewCurrentWorth model
                     ]
                 ]
-            , div [ class "column" ]
-                [ viewChart model.chart model.portfolio ]
+            , viewChart model.chartRequest model.portfolio
             ]
         ]
 
@@ -336,20 +329,26 @@ viewCurrentWorth model =
         ]
 
 
-viewChart : Chart -> List Allocation -> Html Msg
-viewChart chart portfolio =
-    case chart of
-        Just lineList ->
+viewChart : WebData Chart -> List Allocation -> Html Msg
+viewChart chartRequest portfolio =
+    case chartRequest of
+        NotAsked ->
+            text ""
+
+        Loading ->
+            div [ class "column centered-message" ] [ text "Loading..." ]
+
+        Failure _ ->
+            div [ class "column centered-message" ] [ text "Server Error" ]
+
+        Success (Chart lineList) ->
             let
                 mapper =
                     \item color -> LineChart.line color Dots.none item.ticker item.data
             in
-            div []
+            div [ class "column" ]
                 [ LineChart.viewCustom Helper.chartConfig (List.map2 mapper lineList (Helper.colorOptions portfolio))
                 ]
-
-        Nothing ->
-            div [] []
 
 
 datePickerSettings : DatePicker.DatePicker -> DatePicker.Settings
@@ -423,5 +422,5 @@ postToBackend model =
         , tracker = Nothing
         , headers = []
         , url = "http://localhost:4000/api"
-        , expect = Http.expectJson GotHistory Chart.decoder
+        , expect = Http.expectJson (RemoteData.fromResult >> GotHistory) Chart.decoder
         }

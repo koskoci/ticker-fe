@@ -1,22 +1,18 @@
-module Data.Chart exposing (Chart, decoder, worth)
+module Data.Chart exposing (Chart(..), decoder, worth)
 
 import Data.Line as Line exposing (Line)
 import Json.Decode as Decode exposing (Decoder)
 
 
-type alias Chart =
-    Maybe (List Line)
+type Chart
+    = Chart (List Line)
 
 
-worth : Chart -> Maybe Float
-worth chart =
-    let
-        worthOf =
-            \lineList -> List.map Line.worth lineList |> List.sum
-    in
-    Maybe.map worthOf chart
+worth : Chart -> Float
+worth (Chart lineList) =
+    List.map Line.worth lineList |> List.sum
 
 
 decoder : Decoder Chart
 decoder =
-    Decode.at [ "history" ] (Decode.map Just (Decode.list Line.decoder))
+    Decode.at [ "history" ] (Decode.map Chart (Decode.list Line.decoder))

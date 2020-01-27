@@ -31,7 +31,7 @@ colorOptions portfolio =
 
 chartConfig : LineChart.Config Datum msg
 chartConfig =
-    { y = Axis.default 450 "value" .value
+    { y = Axis.default 450 "$" .value
     , x = Axis.time Time.utc 800 "time" (toFloat << Time.posixToMillis << .time)
     , container = containerConfig
     , interpolation = Interpolation.monotone
