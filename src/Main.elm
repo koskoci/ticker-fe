@@ -130,12 +130,7 @@ update msg model =
             let
                 remainingPercentage : Float
                 remainingPercentage =
-                    case model.currentPercentage of
-                        Just currentPercentage ->
-                            100 - totalPercentage model - currentPercentage
-
-                        Nothing ->
-                            100 - totalPercentage model
+                    100 - totalPercentage model - Maybe.withDefault 0 model.currentPercentage
             in
             case Allocation.current model.currentPercentage model.currentTicker of
                 Just allocation ->
@@ -224,20 +219,10 @@ viewAllocationAdder : Model -> Html Msg
 viewAllocationAdder model =
     let
         currentTicker =
-            case model.currentTicker of
-                Just string ->
-                    string
-
-                Nothing ->
-                    ""
+            model.currentTicker |> Maybe.withDefault ""
 
         currentPercentage =
-            case model.currentPercentage of
-                Just float ->
-                    String.fromFloat float
-
-                Nothing ->
-                    ""
+            model.currentPercentage |> Maybe.map String.fromFloat |> Maybe.withDefault ""
     in
     div [ class "field" ]
         [ Html.label [ class "label" ] [ text "Portfolio:" ]
